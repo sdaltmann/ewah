@@ -12,6 +12,147 @@ from ewah.constants import EWAHConstants as EC
 from datetime import datetime, timedelta
 import os
 
+def dbt_dag_factory(
+    dag_name,
+    dwh_engine,
+    dwh_conn_id,
+    dbt_project_folder, # e.g. ~/dbt_home/analytics
+    dbt_venv_folder, # e.g. ~/dbt_home/env
+    dbt_profiles_dir=None, # defaults to dbt_project_folder
+    env=None, # dict of env vars for profiles.yml, created on the spot if None
+    is_full_refresh=False, # use dbt's --full-refresh flag
+    models=[], # list of models, as per dbt syntax (e.g. tag, +, @ are allowed)
+    exclude=[], # list of models to exclude, as per dbt syntax
+    default_args={}, # default_args for DAG
+    start_date=None,
+    schedule_interval=None,
+    seed=True,
+    run=True,
+    test=True,
+    docs=True,
+):
+    if not (seed or run or test or docs):
+        raise Exception('Must run at least one of seed, run, test, or docs!')
+
+    dbt_profiles_dir = dbt_profiles_dir or dbt_project_folder
+
+    if models:
+        models_flag = '--models ' + ' '.join(models)
+    else:
+        models_flag = ''
+
+    if exclude:
+        exclude_flag = '--exclude ' + ' '.join(exclude)
+    else:
+        exclude_flag = ''
+
+    if is_full_refresh:
+        fr_flag = '--full-refresh'
+
+    flags_run = ' '.join([fr_flag, exclude_flag, models_flag])
+    flags_test = '{0} {1}'.format(exclude_flag, models_flag)
+
+    illegal_strings = [
+        '&&', '\n', '|'
+    ]
+    for ill_str in illegal_strings:
+        for cmd_str in [dbt_venv_folder, dbt_project_folder, flags]:
+            if ill_str in cmd_str:
+                raise Exception('Illegal character {0} found in {1}!'.format(
+                    ill_str,
+                    cmd_str,
+                ))
+
+    bash_command = '''
+        source {0}/bin/activate
+        cd {1}
+        dbt {2}
+    '''.format(
+        dbt_venv_folder,
+        dbt_project_folder,
+        '{0}',
+    )
+
+    if not env:
+        conn = BaseHook.get_connection(dwh_conn_id)
+        if dwh_engine == EC.DWH_ENGINE_POSTGRES:
+            env = {
+                'DBT_DWH_HOST': str(conn.host),
+                'DBT_DWH_USER': str(conn.login),
+                'DBT_DWH_PASS': str(conn.password),
+                'DBT_DWH_PORT': str(conn.port),
+                'DBT_DWH_DBNAME': str(conn.schema),
+                'DBT_DWH_SCHEMA': dbt_schema_name,
+                'DBT_PROFILES_DIR': folder,
+            }
+        elif dwh_engine == EC.DWH_ENGINE_SNOWFLAKE:
+            extra = conn.extra_dejson
+            env = {
+                'DBT_ACCOUNT': extra.get('account', conn.host),
+                'DBT_USER': conn.login,
+                'DBT_PASS': conn.password,
+                'DBT_ROLE': extra.get('role'),
+                'DBT_DB': extra.get('database'),
+                'DBT_WH': extra.get('warehouse'),
+                'DBT_PROFILES_DIR': folder,
+            }
+        else:
+            raise ValueError('DWH type not implemented!')
+
+    dag = DAG(
+        dag_name,
+        catchup=False,
+        max_active_runs=1,
+        schedule_interval=schedule_interval,
+        start_date=start_date,
+        default_args=default_args,
+    )
+
+    previous_task = None
+    current_task = None
+
+    if seed:
+        previous_task = BashOperator(
+            task_id='dbt_seed',
+            bash_command=bash_command.format('seed {0}'.format(fr_flag)),
+            env=env,
+            dag=dag,
+        )
+
+    if run:
+        current_task = BashOperator(
+            task_id='dbt_run',
+            bash_command=bash_command.format('run {0}'.format(flags_run)),
+            env=env,
+            dag=dag,
+        )
+        if previous_task:
+            previous_task >> current_task
+        previous_task = current_task
+
+    if test:
+        current_task = BashOperator(
+            task_id='dbt_test',
+            bash_command=bash_command.format('test {0}'.format(flags_test)),
+            env=env,
+            dag=dag,
+        )
+        if previous_task:
+            previous_task >> current_task
+            previous_task = current_task
+
+    if docs:
+        current_task = BashOperator(
+            task_id='dbt_docs_generate',
+            bash_command=bash_command.format('docs generate'),
+            env=env,
+            dag=dag,
+        )
+        if previous_task:
+            previous_task >> current_task
+        previous_task = current_task
+
+
 def dbt_dags_factory(
     dwh_engine,
     dwh_conn_id,
