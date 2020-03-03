@@ -59,6 +59,8 @@ class EWAHBaseOperator(BaseOperator):
 
     upload_call_count = 0
 
+    _MD5_HASH_COLUMN_NAME = 'md5_hash_pk'
+
     def __init__(
         self,
         source_conn_id,
@@ -72,6 +74,7 @@ class EWAHBaseOperator(BaseOperator):
         drop_and_replace=True,
         update_on_columns=None,
         primary_key_column_name=None,
+        create_primary_key_as_hashed_column=False,
     *args, **kwargs):
 
         if not dwh_engine or not dwh_engine in EC.DWH_ENGINES:
@@ -102,6 +105,29 @@ class EWAHBaseOperator(BaseOperator):
             if not columns_definition:
                 raise Exception('This operator requires the argument ' \
                     + 'columns_definition!')
+
+        if create_primary_key_as_hashed_column:
+            if update_columns:
+                raise Exception('Cannot specify both update_on_columns and ' \
+                    + 'set create_primary_key_as_hashed_column=True!')
+            if primary_key_column_name:
+                raise Exception('Cannot specify both primary_key_column_name ' \
+                    + 'and set create_primary_key_as_hashed_column=True!')
+            if columns_definition:
+                if columns_definition.get(self._MD5_HASH_COLUMN_NAME):
+                    raise Exception(('Must not have a column called {0} and' \
+                            + ' set create_primary_key_as_hashed_column=True!'
+                        ).format(
+                        self._MD5_HASH_COLUMN_NAME,
+                    ))
+                if [1 for _, v in columns_definition.items() \
+                    if v.get(EC.QBC_FIELD_PK)]:
+                    raise Exception('Must not have any pre-specified primary ' \
+                        + 'keys and set create_primary_key_as_hashed_column=' \
+                        + 'True!')
+                columns_definition.update({self._MD5_HASH_COLUMN_NAME:{
+                    EC.QBC_FIELD_PK:True,
+                }})
 
         if not drop_and_replace:
             if not (
@@ -137,6 +163,8 @@ class EWAHBaseOperator(BaseOperator):
         self.update_on_columns = update_on_columns
         self.primary_key_column_name = primary_key_column_name # may be used ...
         #   ... by a child class at execution!
+        self.create_primary_key_as_hashed_column = \
+            create_primary_key_as_hashed_column
 
         self.hook = {
             EC.DWH_ENGINE_POSTGRES: EWAHDWHookPostgres,
@@ -251,6 +279,8 @@ class EWAHBaseOperator(BaseOperator):
             update_on_columns=self.update_on_columns,
             commit=True,
             logging_function=self.log.info,
+            md5_column=self._MD5_HASH_COLUMN_NAME \
+                if self.create_primary_key_as_hashed_column else None,
         )
         #hook.commit()
         hook.close()

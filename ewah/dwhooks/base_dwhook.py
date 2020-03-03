@@ -190,6 +190,7 @@ class EWAHBaseDWHook(BaseHook):
         update_on_columns=None,
         commit=False,
         logging_function=None,
+        md5_column=None,
     ):
         logging_function = logging_function or (lambda *args: None)
         database_name = database_name or \
