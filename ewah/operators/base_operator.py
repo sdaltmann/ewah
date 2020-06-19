@@ -1,10 +1,100 @@
-from airflow.models import BaseOperator
+#from airflow.models import BaseOperator
+from airflow.operators.python_operator import PythonVirtualenvOperator
 from airflow.hooks.base_hook import BaseHook
 
 from ewah.dwhooks import get_dwhook
 from ewah.constants import EWAHConstants as EC
 
+class EWAHBaseOperator(PythonVirtualenvOperator):
+    """Extension of airflow's PythonVirtualenvOperator.
+    """
 
+    # Operator settings - to be overwritten by child operators
+    _IS_INCREMENTAL = False # Child class must update these values accordingly
+    _IS_FULL_REFRESH = False # Defines whether operator is usable in factories
+    _REQUIRES_COLUMNS_DEFINITION = True # Raise error if true an none supplied
+
+    # counter to count how often data has been uploaded within one execution
+    upload_call_count = 0
+
+    def __init__(self,
+        dwh_engine,
+        dwh_conn_id,
+        target_table_name,
+        target_schema_name,
+        target_schema_suffix='next',
+        target_database_name=None, # Only for Snowflake
+        columns_definition=None,
+    *args, **kwargs):
+
+        # DWH engine must be one of the implemented DWHs
+        if not dwh_engine or not dwh_engine in EC.DWH_ENGINES:
+            raise Exception('Invalid DWH Engine: {0}\n\nAccapted Engines:{1}'
+                .format(
+                str(dwh_engine),
+                '\n'.join(EC.DWH_ENGINES),
+            ))
+        if not (dwh_conn_id and type(dwh_conn_id) == str):
+            raise Exception('Must provide string for "dwh_conn_id"!')
+
+        # Check of target config is supplied properly.
+        # Note: Only Snowflake DWHs need a target_database_name
+        if dwh_engine == EC.DWH_ENGINE_SNOWFLAKE:
+            if not (target_database_name and type(target_database_name) == str):
+                raise Exception('If using DWH Engine {0}, must provide {1}!'
+                    .format(
+                        dwh_engine,
+                        '"target_database_name" to specify the Database',
+                    )
+                )
+        else:
+            if target_database_name:
+                raise Exception('Received argument for "target_database_name"!')
+        if not (target_table_name and type(target_table_name) == str):
+            raise Exception('Must provide string for "target_table_name"!')
+        if not (target_schema_name and type(target_schema_name) == str):
+            raise Exception('Must provide string for "target_schema_name"!')
+        if not (target_schema_suffix and type(target_schema_suffix) == str):
+            raise Exception('Must provide string for "target_schema_suffix"!')
+
+        # If required, check if columns_definition is supplied
+        if self._REQUIRES_COLUMNS_DEFINITION:
+            if not columns_definition:
+                raise Exception('This operator requires the argument ' \
+                    + 'columns_definition!')
+
+        # set the following kwargs:
+        #   python_callable = dependent on operator
+        #   requirements = dependent on operator - must include dill
+        #   python_version = None
+        #   use_dill = True
+        #   op_args = None
+        #   op_kwargs ? kwags given to the python_callable
+        #   provide_context = True
+        #   string_args = None
+        #   templates_dict ?
+        #   templates_exts ?
+
+
+        # Run parent __init__
+        super().__init__(*args, **kwargs)
+
+        # Save any additional args for execution
+        self.dwh_engine = dwh_engine
+        self.dwh_conn_id = dwh_conn_id
+        self.target_table_name = target_table_name
+        self.target_schema_name = target_schema_name
+        self.target_schema_suffix = target_schema_suffix
+        self.target_database_name = target_database_name
+        self.columns_definition = columns_definition
+
+        self.hook = get_dwhook(self.dwh_engine)
+
+    def execute(self, context):
+        # run super().execute() in loops as required to load data, use returning data to upload to dwh
+        pass
+
+'''
 class EWAHBaseOperator(BaseOperator):
     """Extension of airflow's native Base Operator.
 
@@ -264,3 +354,4 @@ class EWAHEmptyOperator(EWAHBaseOperator):
             + '\n\t' + '\n\t'.join(args) + '\n\nSupplied kwargs:\n\t' \
             + '\n\t'.join(['{0}: {1}'.format(k, v) for k, v in kwargs.items()])
         )
+'''

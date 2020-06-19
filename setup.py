@@ -18,7 +18,7 @@ setuptools.setup(
         "License :: OSI Approved :: MIT License",
     ],
     python_requires='>=3.6',
-    install_requires=[            # I get to this in a second
+    install_requires=[            # I get to this in a second # TBU: remove all not required by non-operators
           'pyyaml',
           'psycopg2',
           'gspread',
