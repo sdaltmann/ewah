@@ -73,6 +73,12 @@ class EWAHBaseOperator(BaseOperator):
         primary_key_column_name=None,
         clean_data_before_upload=True,
     *args, **kwargs):
+        # Make ewah work with kubernetes executor
+        exec_config = kwargs.pop('executor_config', {})
+        kube_ex = exec_config.pop('KubernetesExecutor', {})
+        kube_ex.update({'image': 'gemmaanalytics/ewah:all'})
+        exec_config.update(kube_ex)
+        kwargs['executor_config'] = exec_config
 
         if not dwh_engine or not dwh_engine in EC.DWH_ENGINES:
             raise Exception('Invalid DWH Engine: {0}\n\nAccapted Engines:{1}'

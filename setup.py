@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="ewah", # Replace with your own username
-    version="0.1.12",
+    version="0.2.0",
     author="Bijan Soltani",
     author_email="bijan.soltani+ewah@gemmaanalytics.com",
     description="An ELT with airflow helper module: Ewah",
@@ -18,18 +18,21 @@ setuptools.setup(
         "License :: OSI Approved :: MIT License",
     ],
     python_requires='>=3.6',
-    install_requires=[            # I get to this in a second
+    install_requires=[
           'pyyaml',
           'psycopg2',
-          'gspread',
-          'pytz',
-          'yahoofinancials',
-          'google-api-python-client',
-          'oauth2client',
-          'cx_Oracle',
-          'facebook_business',
-          'mysql-connector-python',
           'snowflake-connector-python',
-          'pymongo',
+          'pytz',
+          # don't force installation of packages related to operators
+          # they can either be installed manually or not at all when using
+          # kubernetes executor, thereby avoiding any dependency conflicts
+          # 'gspread',
+          # 'yahoofinancials',
+          # 'google-api-python-client',
+          # 'oauth2client',
+          # 'cx_Oracle',
+          # 'facebook_business',
+          # 'mysql-connector-python',
+          # 'pymongo',
       ],
 )
